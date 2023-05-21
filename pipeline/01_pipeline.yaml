@@ -1,0 +1,104 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: caj-fare-pipeline
+spec:
+  workspaces:
+  - name: app-source
+  - name: app-manifest
+  params:
+  - name: deployment-name
+    type: string
+    description: name of the deployment to be patched
+  - name: git-url
+    type: string
+    description: url of the git repo for the code of deployment
+  - name: git-revision
+    type: string
+    description: revision to be used from repo of the code for deployment
+    default: "main"
+  - name: image
+    type: string
+    description: image to be build from the code
+  - name: dockerfile
+    type: string
+    description: dockerfile name
+  - name: manifest-dir
+    type: string
+    description: manifest dir path
+
+  tasks:
+  - name: fetch-repository
+    taskRef:
+      name: git-clone
+      kind: ClusterTask
+    workspaces:
+    - name: output
+      workspace: app-source
+    params:
+    - name: url
+      value: $(params.git-url)
+    - name: subdirectory
+      value: ""
+    - name: deleteExisting
+      value: "true"
+    - name: revision
+      value: $(params.git-revision)
+
+  - name: generate-tag
+    taskRef:
+      kind: Task
+      name: generate-tag
+
+  - name: gradle
+    runAfter:
+    - fetch-repository
+    - generate-tag
+    taskRef:
+      name: gradle
+    params:
+    - name: TASKS
+      value: ["build", "-x", "test"]
+    workspaces:
+    - name: source
+      workspace: app-source
+
+  - name: build-image
+    taskRef:
+      name: buildah
+      kind: ClusterTask
+    params:
+    - name: TLSVERIFY
+      value: "false"
+    - name: IMAGE
+      value: $(params.image):$(tasks.generate-tag.results.image-tag)
+    - name: DOCKERFILE
+      value: $(params.dockerfile)
+    workspaces:
+    - name: source
+      workspace: app-source
+    runAfter:
+    - gradle
+
+  - name: apply-manifests
+    taskRef:
+      name: apply-manifests
+    params:
+    - name: manifest_dir
+      value: $(params.manifest-dir)
+    workspaces:
+    - name: source
+      workspace: app-source
+    runAfter:
+    - build-image
+
+  - name: update-deployment
+    taskRef:
+      name: update-deployment
+    params:
+    - name: deployment
+      value: $(params.deployment-name)
+    - name: IMAGE
+      value: $(params.image):$(tasks.generate-tag.results.image-tag)
+    runAfter:
+    - apply-manifests

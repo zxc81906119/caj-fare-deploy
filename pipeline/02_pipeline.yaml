@@ -88,30 +88,6 @@ spec:
     runAfter:
     - gradle
 
-  # - name: apply-manifests
-  #   taskRef:
-  #     name: apply-manifests
-  #   params:
-  #   - name: manifest_dir
-  #     value: $(params.manifest-dir)
-  #   workspaces:
-  #   - name: source
-  #     workspace: app-source
-  #   runAfter:
-  #   - build-image
-
-  # - name: update-deployment
-  #   taskRef:
-  #     name: update-deployment
-  #   params:
-  #   - name: deployment
-  #     value: $(params.deployment-name)
-  #   - name: IMAGE
-  #     value: $(params.image)
-  #   runAfter:
-  #   - apply-manifests
-
-  # GitOps
   - name: fetch-manifests-repository
     taskRef:
       name: git-clone
