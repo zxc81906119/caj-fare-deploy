@@ -1,0 +1,172 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: caj-fare-pipeline
+spec:
+  workspaces:
+  - name: app-source
+  - name: app-manifest
+  - name: ssh-creds
+  params:
+  - name: deployment-name
+    type: string
+    description: name of the deployment to be patched
+  - name: git-url
+    type: string
+    description: url of the git repo for the code of deployment
+  - name: git-revision
+    type: string
+    description: revision to be used from repo of the code for deployment
+    default: "main"
+  - name: image
+    type: string
+    description: image to be build from the code
+  - name: dockerfile
+    type: string
+    description: dockerfile name
+  - name: manifest-git-url
+    type: string
+    description: manifest git repo url
+  - name: manifest-git-revision
+    type: string
+    description: manifest git revision
+    default: main
+  - name: manifest-path
+    type: string
+    description: the path to manifests
+
+  tasks:
+  - name: fetch-repository
+    taskRef:
+      name: git-clone
+      kind: ClusterTask
+    workspaces:
+    - name: output
+      workspace: app-source
+    params:
+    - name: url
+      value: $(params.git-url)
+    - name: subdirectory
+      value: ""
+    - name: deleteExisting
+      value: "true"
+    - name: revision
+      value: $(params.git-revision)
+
+  - name: generate-tag
+    taskRef:
+      kind: Task
+      name: generate-tag
+
+  - name: gradle
+    runAfter:
+    - fetch-repository
+    - generate-tag
+    taskRef:
+      name: gradle
+    params:
+    - name: TASKS
+      value: ["build", "-x", "test"]
+    workspaces:
+    - name: source
+      workspace: app-source
+
+  - name: build-image
+    taskRef:
+      name: buildah
+      kind: ClusterTask
+    params:
+    - name: TLSVERIFY
+      value: "false"
+    - name: IMAGE
+      value: $(params.image):$(tasks.generate-tag.results.image-tag)
+    - name: DOCKERFILE
+      value: $(params.dockerfile)
+    workspaces:
+    - name: source
+      workspace: app-source
+    runAfter:
+    - gradle
+
+  # - name: apply-manifests
+  #   taskRef:
+  #     name: apply-manifests
+  #   params:
+  #   - name: manifest_dir
+  #     value: $(params.manifest-dir)
+  #   workspaces:
+  #   - name: source
+  #     workspace: app-source
+  #   runAfter:
+  #   - build-image
+
+  # - name: update-deployment
+  #   taskRef:
+  #     name: update-deployment
+  #   params:
+  #   - name: deployment
+  #     value: $(params.deployment-name)
+  #   - name: IMAGE
+  #     value: $(params.image)
+  #   runAfter:
+  #   - apply-manifests
+
+  # GitOps
+  - name: fetch-manifests-repository
+    taskRef:
+      name: git-clone
+      kind: ClusterTask
+    workspaces:
+    - name: output
+      workspace: app-manifest
+    - name: ssh-directory
+      workspace: ssh-creds
+    params:
+    - name: url
+      value: $(params.manifest-git-url)
+    - name: subdirectory
+      value: ""
+    - name: deleteExisting
+      value: "true"
+    - name: revision
+      value: $(params.manifest-git-revision)
+    runAfter:
+    - build-image
+
+  - name: update-gitops-manifests
+    taskRef:
+      name: update-deployment-image
+    workspaces:
+    - name: source
+      workspace: app-manifest
+    params:
+    - name: DEPLOYMENT_PATH
+      value: $(params.manifest-path)
+    - name: IMAGE
+      value: $(params.image):$(tasks.generate-tag.results.image-tag)
+    runAfter:
+    - fetch-manifests-repository
+
+  - name: push-manifest-with-new-image
+    taskRef:
+      name: git-cli
+      kind: ClusterTask
+    workspaces:
+    - name: source
+      workspace: app-manifest
+    - name: ssh-directory
+      workspace: ssh-creds
+    params:
+    - name: GIT_USER_NAME
+      value: 'CCChou'
+    - name: GIT_USER_EMAIL
+      value: 'dses5900@gmail.com'
+    - name: GIT_SCRIPT
+      value: |
+        git config --global --add safe.directory $(workspaces.source.path)
+        git checkout -b main
+        git add $(params.manifest-path)
+        git commit -m "Update with new image"
+        git push origin main
+    runAfter:
+    - update-gitops-manifests

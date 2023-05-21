@@ -1,0 +1,25 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: update-deployment-image
+  annotations:
+    description: |
+      Update Deployment image field
+spec:
+  workspaces:
+  - name: source
+  params:
+  - name: DEPLOYMENT_PATH
+    description: Deployment manifest path
+    type: string
+  - name: IMAGE
+    description: New image tag
+    type: string
+  steps:
+  - name: sed-image
+    workingDir: $(workspaces.source.path)
+    image: registry.access.redhat.com/ubi8/ubi-minimal:8.5
+    script: |
+      #!/usr/bin/env bash
+      sed -i "s|image:.*|image: '$(params.IMAGE)'|g" $(params.DEPLOYMENT_PATH)
+      cat $(params.DEPLOYMENT_PATH)
