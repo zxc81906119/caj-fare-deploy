@@ -74,8 +74,8 @@ spec:
       - name: manifest-dir
         value: src/main/resources/openshift
       - name: dockerfile
-        value: Dockerfile-build
+        value: Dockerfile-openjdk
       workspaces:
-      - name: shared-workspace
+      - name: app-source
         persistentVolumeClaim:
           claimName: caj-fare-pipeline-pvc
