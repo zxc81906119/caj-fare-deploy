@@ -70,7 +70,7 @@ spec:
       - name: git-revision
         value: $(tt.params.gitrevision)
       - name: image
-        value: image-registry.openshift-image-registry.svc:5000/caj-fare/caj-fare:$(tt.params.gitrevision)
+        value: image-registry.openshift-image-registry.svc:5000/caj-fare/caj-fare
       - name: manifest-dir
         value: src/main/resources/openshift
       - name: dockerfile
