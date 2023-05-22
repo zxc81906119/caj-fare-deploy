@@ -1,0 +1,91 @@
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: caj-fare-github-listener
+spec:
+  triggers:
+    - name: github-listener
+      interceptors:
+        - ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: github-secret
+                secretKey: secretToken
+            - name: "eventTypes"
+              value: ["push"]
+      bindings:
+        - ref: caj-fare-github-binding
+      template:
+        ref: caj-fare-github-template
+  resources:
+    kubernetesResource:
+      spec:
+        template:
+          spec:
+            serviceAccountName: tekton-triggers-example-sa
+            containers:
+              - resources:
+                  requests:
+                    memory: "64Mi"
+                    cpu: "250m"
+                  limits:
+                    memory: "128Mi"
+                    cpu: "500m"
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: caj-fare-github-binding
+spec:
+  params:
+    - name: gitrepositoryurl
+      value: $(body.repository.clone_url)
+    - name: gitrevision
+      value: $(body.head_commit.id)
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: caj-fare-github-template
+spec:
+  params:
+    - name: gitrevision
+    - name: gitrepositoryurl
+  resourcetemplates:
+  - apiVersion: tekton.dev/v1beta1
+    kind: PipelineRun
+    metadata:
+      generateName: caj-fare-pipeline-run-
+    spec:
+      pipelineRef:
+        name: caj-fare-pipeline
+      params:
+      - name: deployment-name
+        value: caj-fare
+      - name: git-url
+        value: $(tt.params.gitrepositoryurl)
+      - name: git-revision
+        value: $(tt.params.gitrevision)
+      - name: image
+        value: image-registry.openshift-image-registry.svc:5000/caj-fare/caj-fare
+      - name: dockerfile
+        value: Dockerfile-openjdk
+      - name: manifest-git-url
+        value: git@github.com:CCChou/caj-fare-deploy.git
+      - name: manifest-git-revision
+        value: main
+      - name: manifest-path
+        value: gitops/deployment.yaml
+      workspaces:
+      - name: app-source
+        persistentVolumeClaim:
+          claimName: caj-fare-pipeline-pvc
+      - name: app-manifest
+        persistentVolumeClaim:
+          claimName: manifest-pvc
+      - name: ssh-creds
+        secret:
+          secretName: ssh-credentials
